@@ -2,9 +2,24 @@ import { Request, Response } from 'express';
 import prisma from '../ormconfig';
 import { sendSQSMessage } from '../utils/sqsUtil';
 import { publishMessageToTopic } from '../utils/snsUtil';
-export const getProducts = async (_req: Request, res: Response) => {
+import { ProductService } from '../services/productService';
+import jwt from 'jsonwebtoken';
+interface FilterOptions {
+    name?: string;
+    price?: number;
+    quantity?: number;
+  }
+
+const productService = new ProductService();
+export const getProducts = async (req: Request, res: Response) => {
   try {
-    const products = await prisma.product.findMany();
+    const { page = 1, limit = 10, filter = {} } = req.query;
+    
+    const products = await productService.getProducts(
+      parseInt(page as string),
+      parseInt(limit as string),
+      filter as FilterOptions,
+    );
     res.json(products);
   } catch (error) {
     res.status(500).json({ error: 'Internal Server Error' });
@@ -12,15 +27,12 @@ export const getProducts = async (_req: Request, res: Response) => {
 };
 
 export const createProduct = async (req: Request, res: Response) => {
-  const { name, description, price, quantity } = req.body;
-
   try {
-    const product = await prisma.product.create({
-      data: { name, description, price, quantity },
-    });
-    const message = JSON.stringify(product);
-    await sendSQSMessage(message);
-    res.status(201).json(product);
+       const { name, description, price, quantity } = req.body;
+       const product = await productService.createProduct(name, description, price, quantity);
+        const message = JSON.stringify(product);
+        await sendSQSMessage(message);
+        res.status(201).json(product);
   } catch (error) {
     console.log(error);
     res.status(500).json({ error: 'Internal Server Error' });
@@ -28,34 +40,37 @@ export const createProduct = async (req: Request, res: Response) => {
 };
 
 export const getProductById = async (req: Request, res: Response) => {
-  const { id } = req.params;
 
   try {
-    const product = await prisma.product.findUnique({ where: { id: parseInt(id) } });
+    const productId = parseInt(req.params.id);
+
+    const product = await productService.getProduct(productId);
 
     if (!product) {
-      return res.status(404).json({ error: 'Product not found' });
+      res.status(404).json({ error: 'Product not found' });
+    } else {
+      res.status(200).json(product);
     }
-
-    res.json(product);
   } catch (error) {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
 
 export const updateProduct = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { name, description, price, quantity } = req.body;
+ 
 
   try {
-    const product = await prisma.product.update({
-      where: { id: parseInt(id) },
-      data: { name, description, price, quantity },
-    });
-    if(!product) {
-        return res.status(404).json({ error: 'Product not found' });
+    const productId = parseInt(req.params.id);
+    const { name, description, price, quantity } = req.body;
+
+    const product = await productService.updateProduct(productId, name, description, price, quantity);
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    } else {
+      res.status(200).json(product);
     }
-    if (quantity < 10) {
+    if (product.quantity < 10) {
         const message = `Product ID: ${product.id} quantity is below the threshold.`;
         await publishMessageToTopic('arn:aws:sns:us-east-1:000000000000:test-topic', message);
       }
@@ -67,13 +82,38 @@ export const updateProduct = async (req: Request, res: Response) => {
 };
 
 export const deleteProduct = async (req: Request, res: Response) => {
-  const { id } = req.params;
 
   try {
-    await prisma.product.delete({ where: { id: parseInt(id) } });
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const decodedToken = jwt.verify(token, String(process.env.JWT_SECRET));
+    if (!decodedToken || typeof decodedToken !== 'object') {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
 
-    res.sendStatus(204);
+    const productId = req.params.id;
+
+    const product = await productService.getProduct(parseInt(productId));
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    await productService.deleteProduct(product.id);
+
+    return res.status(200).json({ message: 'Product deleted successfully' });
+    // res.sendStatus(204);
   } catch (error) {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 };
+
+export const generateToken = (req: Request, res: Response): Response => {
+    try {
+      const token = jwt.sign({ userId: req.query.user_id }, String(process.env.JWT_SECRET), { expiresIn: '1h' });
+      return res.status(200).json({ token });
+    } catch (error) {
+      console.error('Error generating JWT token:', error);
+      return res.status(500).json({ message: 'Internal Server Error' });
+    }
+  };
