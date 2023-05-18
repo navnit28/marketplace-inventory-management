@@ -1,17 +1,13 @@
 // productService.ts
 
 import { Product } from '../models/product';
-import { Prisma } from '@prisma/client';
 import prisma from '../ormconfig';
 interface FilterOptions {
     name?: string;
     price?: number;
     quantity?: number;
   }
-interface SortOptions {
-    field: string;
-    direction: 'asc' | 'desc';
-    }
+
 export class ProductService {
     public async getProducts(page: number, limit: number, filterOptions: FilterOptions): Promise<Product[]> {
         const offset = (page - 1) * limit;
@@ -73,4 +69,15 @@ export class ProductService {
     });
     return !!deleted;
   }
+  public async filterByPriceRange(minPrice: number, maxPrice: number): Promise<Product[]> {
+    const products = await prisma.product.findMany({
+      where: {
+        price: {
+          gte: minPrice,
+          lte: maxPrice,
+        },
+      },
+    });
+    return products;
+    }
 }

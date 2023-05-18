@@ -117,3 +117,23 @@ export const generateToken = (req: Request, res: Response): Response => {
       return res.status(500).json({ message: 'Internal Server Error' });
     }
   };
+export const filterByPriceRange = async (req: Request, res: Response) => {
+  try {
+    const { minPrice, maxPrice } = req.query;
+
+    // Validate and parse the price range parameters
+    const parsedMinPrice = parseInt(minPrice as string);
+    const parsedMaxPrice = parseInt(maxPrice as string);
+    if (isNaN(parsedMinPrice) || isNaN(parsedMaxPrice)) {
+      return res.status(400).json({ error: 'Invalid price range parameters' });
+    }
+
+    // Call the productService to filter products based on the price range
+    const products = await productService.filterByPriceRange(parsedMinPrice, parsedMaxPrice);
+
+    return res.json(products);
+  } catch (error) {
+    console.error('Error filtering products:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};

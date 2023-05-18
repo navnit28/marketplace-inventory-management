@@ -6,6 +6,7 @@ import {
   updateProduct,
   deleteProduct,
   generateToken,
+  filterByPriceRange
 } from '../controllers/productController';
 
 const router = Router();
@@ -18,5 +19,5 @@ router.delete('/:id', deleteProduct);
 // productRoutes.ts
 // Route for generating JWT token
 router.post('/auth/token', generateToken);
-
+router.get('/price/filter', filterByPriceRange)
 export default router;
